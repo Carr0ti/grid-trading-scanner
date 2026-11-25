@@ -19,6 +19,7 @@ dev = ["pytest>=8.0"]
 [project.scripts]
 grid-scanner = "grid_scanner.cli:main"
 grid-backtest = "grid_scanner.backtest_cli:main"
+grid-parameter-sweep = "grid_scanner.parameter_sweep_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
