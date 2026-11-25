@@ -142,7 +142,7 @@ def test_buy_order_fills_when_price_touches_grid_level():
     result = simple_grid_backtest(candles)
 
     assert result["buy_count"] == 1
-    assert result["fills"][0]["grid_price"] == pytest.approx(99)
+    assert result["fills"][0]["grid_price"] == pytest.approx(100 / 1.01)
 
 
 def test_sell_order_can_fill_without_a_previous_buy():
