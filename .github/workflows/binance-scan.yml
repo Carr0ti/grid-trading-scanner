@@ -1,5 +1,5 @@
 
-name: Binance Spot Market Scan
+name: Binance Public Data Endpoint Test
 
 on:
   workflow_dispatch:
@@ -8,8 +8,8 @@ permissions:
   contents: read
 
 jobs:
-  scan:
-    name: Scan Binance Spot Markets
+  test-endpoint:
+    name: Test Binance Public Market Data
     runs-on: ubuntu-latest
 
     steps:
@@ -21,25 +21,35 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install scanner
+      - name: Test Binance public data endpoints
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install .
+          for endpoint in \
+            "https://data-api.binance.vision/api/v3/exchangeInfo?symbol=BTCUSDT" \
+            "https://data-api.binance.vision/api/v3/ticker/24hr?symbol=BTCUSDT" \
+            "https://data-api.binance.vision/api/v3/ticker/bookTicker?symbol=BTCUSDT"
+          do
+            echo ""
+            echo "Testing: $endpoint"
 
-      - name: Run Binance Spot scan
-        run: |
-          python -m grid_scanner.cli \
-            --exchanges binance \
-            --limit 10 \
-            --min-volume 5000000 \
-            --max-spread 0.15 \
-            --csv reports/binance-spot-scan.csv
+            response_file="$(mktemp)"
 
-      - name: Upload CSV report
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: binance-spot-scan
-          path: reports/binance-spot-scan.csv
-          if-no-files-found: warn
-          retention-days: 7
+            curl \
+              --fail \
+              --silent \
+              --show-error \
+              --location \
+              --retry 2 \
+              --connect-timeout 15 \
+              --max-time 30 \
+              "$endpoint" \
+              --output "$response_file"
+
+            python -c \
+              'import json,sys; json.load(open(sys.argv[1])); print("SUCCESS: Valid JSON received.")' \
+              "$response_file"
+
+            rm "$response_file"
+          done
+
+          echo ""
+          echo "All Binance public data endpoint tests passed."
