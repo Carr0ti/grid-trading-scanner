@@ -9,6 +9,7 @@ def sample_candidates():
         {
             "exchange": "binance",
             "symbol": "BTC/USDT",
+            "quote_asset": "USDT",
             "last": 60000.0,
             "quote_volume_usdt": 100000000.0,
             "bid": 59990.0,
@@ -17,7 +18,8 @@ def sample_candidates():
         },
         {
             "exchange": "binance",
-            "symbol": "ETH/USDT",
+            "symbol": "ETH/USDC",
+            "quote_asset": "USDC",
             "last": 3000.0,
             "quote_volume_usdt": 50000000.0,
             "bid": 2999.0,
@@ -26,12 +28,13 @@ def sample_candidates():
         },
         {
             "exchange": "binance",
-            "symbol": "SOL/USDT",
-            "last": 150.0,
+            "symbol": "SOL/BTC",
+            "quote_asset": "BTC",
+            "last": 0.0025,
             "quote_volume_usdt": 20000000.0,
-            "bid": 149.9,
-            "ask": 150.1,
-            "spread_percent": 0.1333,
+            "bid": 0.00249,
+            "ask": 0.00251,
+            "spread_percent": 0.8,
         },
     ]
 
@@ -64,7 +67,7 @@ def sample_result(symbol, status="NO_TRADE"):
     }
 
 
-def test_pipeline_scans_and_researches_selected_pairs(monkeypatch):
+def test_pipeline_scans_and_researches_all_pairs_by_default(monkeypatch):
     scan_calls = []
     research_calls = []
 
@@ -89,32 +92,59 @@ def test_pipeline_scans_and_researches_selected_pairs(monkeypatch):
 
         return [
             sample_result("BTC/USDT", "POTENTIAL_GRID_CANDIDATE"),
-            sample_result("ETH/USDT"),
+            sample_result("ETH/USDC"),
+            sample_result("SOL/BTC"),
         ]
 
     monkeypatch.setattr(pipeline, "scan_exchange", fake_scan)
     monkeypatch.setattr(pipeline, "research_pairs", fake_research)
 
     results = pipeline.run_binance_pipeline(
-        limit=2,
         minimum_quote_volume=6_000_000,
         maximum_spread_percent=0.10,
         candle_limit=300,
     )
 
     assert scan_calls == [
-        ("binance", "USDT", 6_000_000, 0.10)
+        ("binance", None, 6_000_000, 0.10)
     ]
 
     assert len(research_calls) == 1
     assert [
         pair["symbol"] for pair in research_calls[0][0]
-    ] == ["BTC/USDT", "ETH/USDT"]
+    ] == ["BTC/USDT", "ETH/USDC", "SOL/BTC"]
 
     assert research_calls[0][1] == 300
 
-    assert len(results) == 2
+    assert len(results) == 3
     assert results[0]["status"] == "POTENTIAL_GRID_CANDIDATE"
+    assert results[1]["quote_asset"] == "USDC"
+    assert results[2]["quote_asset"] == "BTC"
+
+
+def test_pipeline_respects_optional_limit(monkeypatch):
+    research_calls = []
+
+    monkeypatch.setattr(
+        pipeline,
+        "scan_exchange",
+        lambda exchange_id, **kwargs: sample_candidates(),
+    )
+
+    def fake_research(pairs, candle_limit):
+        research_calls.append(pairs)
+        return [sample_result(pair["symbol"]) for pair in pairs]
+
+    monkeypatch.setattr(pipeline, "research_pairs", fake_research)
+
+    results = pipeline.run_binance_pipeline(limit=2)
+
+    assert len(research_calls[0]) == 2
+    assert len(results) == 2
+    assert [item["symbol"] for item in results] == [
+        "BTC/USDT",
+        "ETH/USDC",
+    ]
 
 
 def test_pipeline_returns_empty_when_no_candidates(monkeypatch):
@@ -164,7 +194,7 @@ def test_pipeline_keeps_results_when_research_returns_failures(monkeypatch):
         "research_pairs",
         lambda pairs, candle_limit: [
             sample_result("BTC/USDT", "ANALYSIS_FAILED"),
-            sample_result("ETH/USDT", "POTENTIAL_GRID_CANDIDATE"),
+            sample_result("ETH/USDC", "POTENTIAL_GRID_CANDIDATE"),
         ],
     )
 
