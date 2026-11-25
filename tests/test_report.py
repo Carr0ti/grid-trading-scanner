@@ -71,6 +71,23 @@ def test_build_report_rows_combines_market_and_research_data():
     assert row["path_efficiency_1d"] == 0.25
 
 
+def test_build_report_rows_uses_market_fields_from_combined_results():
+    combined = sample_research_result()
+    combined.update(sample_market_data()[0])
+
+    rows = build_report_rows([combined])
+
+    assert len(rows) == 1
+
+    row = rows[0]
+
+    assert row["last"] == 60000.0
+    assert row["quote_volume_usdt"] == 100000000.0
+    assert row["bid"] == 59990.0
+    assert row["ask"] == 60010.0
+    assert row["spread_percent"] == 0.0333
+
+
 def test_build_report_rows_handles_missing_market_data():
     rows = build_report_rows([sample_research_result()])
 
