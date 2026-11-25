@@ -10,6 +10,14 @@ from typing import Any
 
 TIMEFRAMES = ("1h", "4h", "1d")
 
+MARKET_FIELDS = (
+    "last",
+    "quote_volume_usdt",
+    "bid",
+    "ask",
+    "spread_percent",
+)
+
 REPORT_FIELDS = [
     "exchange",
     "symbol",
@@ -58,17 +66,18 @@ def build_report_rows(
                 market.get("exchange", "binance"),
             ),
             "symbol": symbol,
-            "last": market.get("last"),
-            "quote_volume_usdt": market.get("quote_volume_usdt"),
-            "bid": market.get("bid"),
-            "ask": market.get("ask"),
-            "spread_percent": market.get("spread_percent"),
             "status": result.get("status", "UNKNOWN"),
             "reasons": " | ".join(
                 str(reason)
                 for reason in result.get("reasons", [])
             ),
         }
+
+        for field in MARKET_FIELDS:
+            row[field] = market.get(
+                field,
+                result.get(field),
+            )
 
         candle_counts = result.get("candle_counts", {})
         timeframe_data = result.get("timeframes", {})
