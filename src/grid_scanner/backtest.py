@@ -123,6 +123,9 @@ def backtest_spot_grid(
     sell orders are touched within a candle, no order fills
     because OHLC data cannot establish the intrabar sequence.
 
+    Initial crypto inventory is assumed to be pre-owned.
+    Initial entry costs are excluded from both strategies.
+
     Fee and slippage rates are decimal fractions:
     0.001 means 0.1 percent.
     """
@@ -145,9 +148,6 @@ def backtest_spot_grid(
     initial_base = base_asset
     initial_cash = cash
 
-    # Each grid level can contain at most one active order.
-    # Negative indices are buy levels; positive indices
-    # are sell levels.
     active_orders: dict[int, dict[str, Any]] = {}
 
     buy_budget = initial_cash / levels_each_side
@@ -176,14 +176,12 @@ def backtest_spot_grid(
             "quantity": quantity,
         }
 
-    # Start with buy orders below the center.
     for index in range(-levels_each_side, 0):
         active_orders[index] = make_buy_order(
             index,
             buy_budget,
         )
 
-    # Start with sell orders above the center.
     for index in range(1, levels_each_side + 1):
         active_orders[index] = {
             "side": "sell",
@@ -200,8 +198,6 @@ def backtest_spot_grid(
         candle_low = float(candle["low"])
         candle_high = float(candle["high"])
 
-        # Only evaluate orders that existed at candle start.
-        # New orders cannot fill on the same candle.
         buy_candidates = []
         sell_candidates = []
 
@@ -222,12 +218,10 @@ def backtest_spot_grid(
             else:
                 sell_candidates.append(candidate)
 
-        # Intrabar order is unknown when both sides are touched.
         if buy_candidates and sell_candidates:
             ambiguous_candles += 1
 
         elif buy_candidates:
-            # Fill only the buy closest to the market.
             index, order = max(
                 buy_candidates,
                 key=lambda item: item[0],
@@ -252,7 +246,6 @@ def backtest_spot_grid(
 
                 next_index = index + 1
 
-                # A completed buy creates a sell one level higher.
                 if next_index not in active_orders:
                     active_orders[next_index] = {
                         "side": "sell",
@@ -273,7 +266,6 @@ def backtest_spot_grid(
                 )
 
         elif sell_candidates:
-            # Fill only the sell closest to the market.
             index, order = min(
                 sell_candidates,
                 key=lambda item: item[0],
@@ -298,7 +290,6 @@ def backtest_spot_grid(
 
                 next_index = index - 1
 
-                # A completed sell creates a buy one level lower.
                 if next_index not in active_orders:
                     active_orders[next_index] = make_buy_order(
                         next_index,
@@ -346,14 +337,11 @@ def backtest_spot_grid(
         net_profit / initial_capital
     ) * 100
 
-    # Buy-and-hold benchmark: invest all starting capital
-    # at the first candle close, including entry costs.
-    hold_execution_price = (
-        first_price * (1 + slippage_rate)
-    )
-    hold_quantity = initial_capital / (
-        hold_execution_price * (1 + fee_rate)
-    )
+    # Buy-and-hold benchmark invests all starting capital
+    # at the same initial reference price.
+    # Initial entry and final exit costs are excluded for
+    # both strategies to keep the comparison consistent.
+    hold_quantity = initial_capital / first_price
     hold_final_equity = hold_quantity * final_price
 
     hold_profit = hold_final_equity - initial_capital
