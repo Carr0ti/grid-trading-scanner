@@ -71,7 +71,6 @@ def test_pipeline_scans_and_researches_selected_pairs(monkeypatch):
     ] == ["BTC/USDT", "ETH/USDT"]
 
     assert research_calls[0][1] == 300
-
     assert len(results) == 2
     assert results[0]["status"] == "POTENTIAL_GRID_CANDIDATE"
 
@@ -80,7 +79,7 @@ def test_pipeline_returns_empty_when_no_candidates(monkeypatch):
     monkeypatch.setattr(
         pipeline,
         "scan_exchange",
-        lambda **kwargs: [],
+        lambda exchange_id, **kwargs: [],
     )
 
     def unexpected_research(*args, **kwargs):
@@ -115,7 +114,7 @@ def test_pipeline_keeps_results_when_research_returns_failures(monkeypatch):
     monkeypatch.setattr(
         pipeline,
         "scan_exchange",
-        lambda **kwargs: sample_candidates()[:2],
+        lambda exchange_id, **kwargs: sample_candidates()[:2],
     )
 
     monkeypatch.setattr(
