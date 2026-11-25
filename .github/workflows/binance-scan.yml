@@ -1,5 +1,5 @@
 
-name: Binance Spot Market Scan
+name: Binance Spot Grid Research
 
 on:
   workflow_dispatch:
@@ -8,9 +8,10 @@ permissions:
   contents: read
 
 jobs:
-  scan:
-    name: Scan Binance Spot Markets
+  research:
+    name: Run Binance Grid Research
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Check out repository
@@ -26,17 +27,19 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e .
 
-      - name: Scan Binance Spot markets
+      - name: Run Binance Spot Grid research
         run: |
           grid-scanner \
-            --exchanges binance \
             --limit 10 \
-            --csv reports/binance-spot-scan.csv
+            --min-volume 5000000 \
+            --max-spread 0.15 \
+            --candle-limit 500 \
+            --csv reports/binance-grid-research.csv
 
-      - name: Upload scan report
+      - name: Upload research report
         uses: actions/upload-artifact@v4
         with:
-          name: binance-spot-scan
-          path: reports/binance-spot-scan.csv
+          name: binance-grid-research
+          path: reports/binance-grid-research.csv
           if-no-files-found: error
           retention-days: 7
