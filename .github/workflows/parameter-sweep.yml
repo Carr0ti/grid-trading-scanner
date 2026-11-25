@@ -1,0 +1,48 @@
+
+name: Binance Parameter Sweep
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  parameter-sweep:
+    name: Backtest Grid Configurations
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .
+
+      - name: Run BTC and ETH parameter sweep
+        run: |
+          grid-parameter-sweep BTC/USDT ETH/USDT \
+            --interval 1h \
+            --candles 500 \
+            --capital 500 \
+            --spacings 0.3,0.5,0.75,1.0 \
+            --levels 5,10,15 \
+            --fee 0.1 \
+            --slippage 0.05 \
+            --output parameter-sweep.csv
+
+      - name: Upload parameter sweep report
+        uses: actions/upload-artifact@v4
+        with:
+          name: binance-parameter-sweep
+          path: parameter-sweep.csv
+          if-no-files-found: error
+          retention-days: 30
