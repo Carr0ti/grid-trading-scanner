@@ -23,18 +23,8 @@ def main() -> None:
     )
 
     parser.add_argument("--limit", type=int, default=10)
-
-    parser.add_argument(
-        "--min-volume",
-        type=float,
-        default=5_000_000,
-    )
-
-    parser.add_argument(
-        "--max-spread",
-        type=float,
-        default=0.15,
-    )
+    parser.add_argument("--min-volume", type=float, default=5_000_000)
+    parser.add_argument("--max-spread", type=float, default=0.15)
 
     parser.add_argument(
         "--csv",
@@ -46,6 +36,7 @@ def main() -> None:
     args = parser.parse_args()
 
     all_rows = []
+    failed_exchanges = []
 
     for exchange_id in args.exchanges:
         print(f"\n=== {exchange_id.upper()} ===")
@@ -59,9 +50,9 @@ def main() -> None:
 
         except Exception as exc:
             print(
-                f"Could not scan {exchange_id}: "
-                f"{type(exc).__name__}: {exc}"
+                f"FAILED: {type(exc).__name__}: {exc}"
             )
+            failed_exchanges.append(exchange_id)
             continue
 
         if not rows:
@@ -117,6 +108,17 @@ def main() -> None:
             writer.writerows(all_rows)
 
         print(f"\nCSV report saved to: {output_path}")
+
+    if failed_exchanges:
+        names = ", ".join(failed_exchanges)
+        raise SystemExit(
+            f"\nScan incomplete. Failed exchanges: {names}"
+        )
+
+    if not all_rows:
+        raise SystemExit(
+            "\nScan completed, but no markets passed the filters."
+        )
 
 
 if __name__ == "__main__":
