@@ -1,17 +1,28 @@
 
+import csv
+
 from grid_scanner import backtest_cli
 
 
 def sample_result():
     return {
+        "exchange": "binance",
         "symbol": "BTC/USDT",
+        "binance_symbol": "BTCUSDT",
         "interval": "1h",
+        "first_candle_time": 1700000000000,
+        "last_candle_time": 1701800000000,
         "candle_count": 500,
+        "strategy": "long_only_spot_grid",
         "initial_capital": 500.0,
         "grid_center": 100000.0,
         "grid_spacing_percent": 0.5,
         "levels_each_side": 10,
+        "fee_rate": 0.001,
+        "slippage_rate": 0.0005,
         "final_price": 101000.0,
+        "final_cash": 260.0,
+        "final_base_asset": 0.002475,
         "final_equity": 510.0,
         "net_profit": 10.0,
         "roi_percent": 2.0,
@@ -137,3 +148,64 @@ def test_cli_reports_backtest_errors(monkeypatch):
         assert error.code == 2
     else:
         raise AssertionError("Expected CLI to exit with an error")
+
+
+def test_cli_saves_csv_report(monkeypatch, capsys, tmp_path):
+    output_path = tmp_path / "reports" / "btc-backtest.csv"
+
+    monkeypatch.setattr(
+        backtest_cli,
+        "run_binance_spot_grid_backtest",
+        lambda **settings: sample_result(),
+    )
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "grid-backtest",
+            "BTC/USDT",
+            "--output",
+            str(output_path),
+        ],
+    )
+
+    backtest_cli.main()
+
+    output = capsys.readouterr().out
+
+    assert output_path.exists()
+    assert "CSV report saved to:" in output
+
+    with output_path.open(
+        newline="",
+        encoding="utf-8",
+    ) as csv_file:
+        rows = list(csv.DictReader(csv_file))
+
+    assert len(rows) == 1
+    assert rows[0]["symbol"] == "BTC/USDT"
+    assert rows[0]["interval"] == "1h"
+    assert float(rows[0]["roi_percent"]) == 2.0
+    assert float(rows[0]["buy_and_hold_roi_percent"]) == 1.0
+
+
+def test_cli_does_not_create_csv_without_output_option(
+    monkeypatch,
+    capsys,
+):
+    monkeypatch.setattr(
+        backtest_cli,
+        "run_binance_spot_grid_backtest",
+        lambda **settings: sample_result(),
+    )
+
+    monkeypatch.setattr(
+        "sys.argv",
+        ["grid-backtest", "BTC/USDT"],
+    )
+
+    backtest_cli.main()
+
+    output = capsys.readouterr().out
+
+    assert "CSV report saved to:" not in output
