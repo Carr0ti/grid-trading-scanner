@@ -1,0 +1,45 @@
+
+name: Binance Spot Market Scan
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: Scan Binance Spot Markets
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Install scanner
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .
+
+      - name: Run Binance Spot scan
+        run: |
+          python -m grid_scanner.cli \
+            --exchanges binance \
+            --limit 10 \
+            --min-volume 5000000 \
+            --max-spread 0.15 \
+            --csv reports/binance-spot-scan.csv
+
+      - name: Upload CSV report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: binance-spot-scan
+          path: reports/binance-spot-scan.csv
+          if-no-files-found: warn
+          retention-days: 7
