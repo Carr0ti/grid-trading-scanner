@@ -14,7 +14,12 @@ def main() -> None:
         description="Run Binance Spot Grid market research."
     )
 
-    parser.add_argument("--limit", type=int, default=10)
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Maximum pairs to research. Omit to research all eligible pairs.",
+    )
     parser.add_argument(
         "--min-volume",
         type=float,
