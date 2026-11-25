@@ -170,6 +170,33 @@ def test_backtest_returns_benchmark_and_risk_metrics():
     assert len(result["equity_curve"]) == len(candles)
 
 
+def test_buy_and_hold_benchmark_uses_same_initial_reference_price():
+    candles = [
+        make_candle(100),
+        make_candle(110),
+    ]
+
+    result = simple_grid_backtest(candles)
+
+    assert result["buy_and_hold_final_equity"] == pytest.approx(550)
+    assert result["buy_and_hold_roi_percent"] == pytest.approx(10)
+
+
+def test_flat_market_gives_both_strategies_zero_return():
+    candles = [
+        make_candle(100),
+        make_candle(100),
+        make_candle(100),
+    ]
+
+    result = simple_grid_backtest(candles)
+
+    assert result["final_equity"] == pytest.approx(500)
+    assert result["buy_and_hold_final_equity"] == pytest.approx(500)
+    assert result["roi_percent"] == pytest.approx(0)
+    assert result["buy_and_hold_roi_percent"] == pytest.approx(0)
+
+
 @pytest.mark.parametrize(
     "settings",
     [
