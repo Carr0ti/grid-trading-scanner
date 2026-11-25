@@ -11,7 +11,7 @@ jobs:
   research:
     name: Run Binance Grid Research
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
 
     steps:
       - name: Check out repository
@@ -30,7 +30,6 @@ jobs:
       - name: Run Binance Spot Grid research
         run: |
           grid-scanner \
-            --limit 10 \
             --min-volume 5000000 \
             --max-spread 0.15 \
             --candle-limit 500 \
