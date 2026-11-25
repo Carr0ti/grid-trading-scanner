@@ -18,25 +18,32 @@ from grid_scanner.parameter_sweep_report import (
 
 def parse_float_options(value: str) -> list[float]:
     """Parse comma-separated floating-point options."""
+    parts = value.split(",")
+
+    if not parts or any(not item.strip() for item in parts):
+        raise argparse.ArgumentTypeError(
+            "Options cannot contain empty values."
+        )
+
     try:
-        options = [float(item.strip()) for item in value.split(",")]
+        return [float(item.strip()) for item in parts]
     except ValueError as error:
         raise argparse.ArgumentTypeError(
             "Options must be comma-separated numbers."
         ) from error
 
-    if not options or any(not item.strip() for item in value.split(",")):
+
+def parse_integer_options(value: str) -> list[int]:
+    """Parse comma-separated integer options."""
+    parts = value.split(",")
+
+    if not parts or any(not item.strip() for item in parts):
         raise argparse.ArgumentTypeError(
             "Options cannot contain empty values."
         )
 
-    return options
-
-
-def parse_integer_options(value: str) -> list[int]:
-    """Parse comma-separated integer options."""
     try:
-        return [int(item.strip()) for item in value.split(",")]
+        return [int(item.strip()) for item in parts]
     except ValueError as error:
         raise argparse.ArgumentTypeError(
             "Options must be comma-separated whole numbers."
