@@ -10,14 +10,18 @@ from grid_scanner.research import research_pairs
 
 
 def run_binance_pipeline(
-    limit: int = 10,
+    limit: int | None = None,
     minimum_quote_volume: float = 5_000_000,
     maximum_spread_percent: float = 0.15,
     candle_limit: int = 500,
 ) -> list[dict[str, Any]]:
-    """Scan Binance markets and combine liquidity with research."""
-    if limit < 1:
-        raise ValueError("Limit must be at least 1")
+    """Scan and research all eligible Binance Spot markets by default.
+
+    Set limit to a positive integer to research only the highest-volume
+    eligible markets. Set limit to None to research every eligible market.
+    """
+    if limit is not None and limit < 1:
+        raise ValueError("Limit must be at least 1 or None")
 
     if minimum_quote_volume < 0:
         raise ValueError("Minimum quote volume cannot be negative")
@@ -30,12 +34,12 @@ def run_binance_pipeline(
 
     candidates = scan_exchange(
         "binance",
-        quote_currency="USDT",
+        quote_currency=None,
         minimum_quote_volume=minimum_quote_volume,
         maximum_spread_percent=maximum_spread_percent,
     )
 
-    selected = candidates[:limit]
+    selected = candidates if limit is None else candidates[:limit]
 
     if not selected:
         return []
