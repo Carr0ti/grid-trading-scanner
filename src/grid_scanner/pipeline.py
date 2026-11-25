@@ -15,7 +15,7 @@ def run_binance_pipeline(
     maximum_spread_percent: float = 0.15,
     candle_limit: int = 500,
 ) -> list[dict[str, Any]]:
-    """Scan Binance liquidity candidates and research each pair."""
+    """Scan Binance markets and combine liquidity with research."""
     if limit < 1:
         raise ValueError("Limit must be at least 1")
 
@@ -40,12 +40,28 @@ def run_binance_pipeline(
     if not selected:
         return []
 
-    results = research_pairs(
+    research_results = research_pairs(
         selected,
         candle_limit=candle_limit,
     )
 
-    for result in results:
-        result["exchange"] = "binance"
+    market_by_symbol = {
+        item["symbol"]: item
+        for item in selected
+    }
 
-    return results
+    combined_results = []
+
+    for result in research_results:
+        symbol = result.get("symbol", "UNKNOWN")
+        market = market_by_symbol.get(symbol, {})
+
+        combined = {
+            **market,
+            **result,
+            "exchange": "binance",
+        }
+
+        combined_results.append(combined)
+
+    return combined_results
