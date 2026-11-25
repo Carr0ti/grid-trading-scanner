@@ -5,6 +5,10 @@ from __future__ import annotations
 
 import argparse
 
+from grid_scanner.backtest_report import (
+    build_backtest_report_row,
+    write_backtest_csv_report,
+)
 from grid_scanner.backtest_runner import (
     run_binance_spot_grid_backtest,
 )
@@ -60,6 +64,10 @@ def main() -> None:
         type=float,
         default=0.05,
         help="Slippage percentage per fill.",
+    )
+    parser.add_argument(
+        "--output",
+        help="Optional path for saving the backtest CSV report.",
     )
 
     args = parser.parse_args()
@@ -127,6 +135,14 @@ def main() -> None:
     )
 
     print(f"\nGrid ROI minus hold ROI: {difference:+.3f} percentage points")
+
+    if args.output:
+        row = build_backtest_report_row(result)
+        saved_path = write_backtest_csv_report(
+            [row],
+            args.output,
+        )
+        print(f"\nCSV report saved to: {saved_path}")
 
     print("\nResearch only. Historical results do not guarantee future returns.")
     print("No trades were placed.")
