@@ -1,124 +1,104 @@
 
-"""Command-line entry point for the liquidity scanner."""
+"""Command-line entry point for Spot Grid research."""
 
 from __future__ import annotations
 
 import argparse
-import csv
-from pathlib import Path
 
-from grid_scanner.exchanges import SUPPORTED_EXCHANGES, scan_exchange
+from grid_scanner.pipeline import run_binance_pipeline
+from grid_scanner.report import build_report_rows, write_csv_report
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Scan liquid USDT Spot markets."
-    )
-
-    parser.add_argument(
-        "--exchanges",
-        nargs="+",
-        choices=SUPPORTED_EXCHANGES,
-        default=list(SUPPORTED_EXCHANGES),
+        description="Run Binance Spot Grid market research."
     )
 
     parser.add_argument("--limit", type=int, default=10)
-    parser.add_argument("--min-volume", type=float, default=5_000_000)
-    parser.add_argument("--max-spread", type=float, default=0.15)
-
+    parser.add_argument(
+        "--min-volume",
+        type=float,
+        default=5_000_000,
+    )
+    parser.add_argument(
+        "--max-spread",
+        type=float,
+        default=0.15,
+    )
+    parser.add_argument(
+        "--candle-limit",
+        type=int,
+        default=500,
+    )
     parser.add_argument(
         "--csv",
         type=str,
-        default=None,
-        help="Optional path for a CSV report.",
+        default="reports/binance-grid-research.csv",
+        help="Output CSV report path.",
     )
 
     args = parser.parse_args()
 
-    all_rows = []
-    failed_exchanges = []
+    print("=" * 60)
+    print("BINANCE SPOT GRID RESEARCH")
+    print("=" * 60)
 
-    for exchange_id in args.exchanges:
-        print(f"\n=== {exchange_id.upper()} ===")
+    print("\nScanning liquid Binance Spot markets...")
 
-        try:
-            rows = scan_exchange(
-                exchange_id,
-                minimum_quote_volume=args.min_volume,
-                maximum_spread_percent=args.max_spread,
-            )
+    results = run_binance_pipeline(
+        limit=args.limit,
+        minimum_quote_volume=args.min_volume,
+        maximum_spread_percent=args.max_spread,
+        candle_limit=args.candle_limit,
+    )
 
-        except Exception as exc:
-            print(
-                f"FAILED: {type(exc).__name__}: {exc}"
-            )
-            failed_exchanges.append(exchange_id)
-            continue
-
-        if not rows:
-            print("No markets passed the current filters.")
-            continue
-
-        selected_rows = rows[:max(args.limit, 0)]
-        all_rows.extend(selected_rows)
-
-        print("Symbol       Last price       24h quote volume      Spread")
-
-        for row in selected_rows:
-            last = row["last"]
-
-            last_text = (
-                f"{last:.8g}"
-                if isinstance(last, (int, float))
-                else "n/a"
-            )
-
-            volume_text = f"{row['quote_volume_usdt']:,.0f}"
-
-            print(
-                f"{row['symbol']:<12} {last_text:>14} "
-                f"{volume_text:>20} "
-                f"{row['spread_percent']:>9.4f}%"
-            )
-
-    if args.csv:
-        output_path = Path(args.csv)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        fieldnames = [
-            "exchange",
-            "symbol",
-            "last",
-            "quote_volume_usdt",
-            "bid",
-            "ask",
-            "spread_percent",
-        ]
-
-        with output_path.open(
-            "w",
-            newline="",
-            encoding="utf-8",
-        ) as csv_file:
-            writer = csv.DictWriter(
-                csv_file,
-                fieldnames=fieldnames,
-            )
-            writer.writeheader()
-            writer.writerows(all_rows)
-
-        print(f"\nCSV report saved to: {output_path}")
-
-    if failed_exchanges:
-        names = ", ".join(failed_exchanges)
+    if not results:
         raise SystemExit(
-            f"\nScan incomplete. Failed exchanges: {names}"
+            "\nNo markets passed the initial liquidity filters."
         )
 
-    if not all_rows:
-        raise SystemExit(
-            "\nScan completed, but no markets passed the filters."
+    report_rows = build_report_rows(results)
+
+    print(f"\nResearch completed: {len(results)} pairs")
+    print("\n=== RESEARCH RESULTS ===")
+
+    for result in results:
+        symbol = result.get("symbol", "UNKNOWN")
+        status = result.get("status", "UNKNOWN")
+        volume = result.get("quote_volume_usdt")
+
+        volume_text = (
+            f"{volume:,.0f} USDT"
+            if isinstance(volume, (int, float))
+            else "n/a"
         )
+
+        print(
+            f"\n{symbol} | {status}"
+            f"\n24h volume: {volume_text}"
+        )
+
+        for reason in result.get("reasons", []):
+            print(f"Reason: {reason}")
+
+    counts = {}
+
+    for result in results:
+        status = result.get("status", "UNKNOWN")
+        counts[status] = counts.get(status, 0) + 1
+
+    print("\n=== STATUS SUMMARY ===")
+
+    for status, count in sorted(counts.items()):
+        print(f"{status}: {count}")
+
+    output_path = write_csv_report(
+        report_rows,
+        args.csv,
+    )
+
+    print(f"\nCSV report saved to: {output_path}")
+    print("\nResearch finished. No trades were placed.")
 
 
 if __name__ == "__main__":
