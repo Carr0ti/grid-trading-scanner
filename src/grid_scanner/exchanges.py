@@ -1,14 +1,18 @@
 
-"""Read public Spot market data from supported exchanges using CCXT."""
+"""Read public Spot market data from supported exchanges."""
 
 from __future__ import annotations
 
+import json
 from typing import Any
+from urllib.request import Request, urlopen
 
 import ccxt
 
 
 SUPPORTED_EXCHANGES = ("binance", "okx", "bybit", "bitget", "mexc")
+
+BINANCE_DATA_API = "https://data-api.binance.vision"
 
 
 def create_exchange(exchange_id: str) -> ccxt.Exchange:
@@ -18,6 +22,98 @@ def create_exchange(exchange_id: str) -> ccxt.Exchange:
 
     exchange_class = getattr(ccxt, exchange_id)
     return exchange_class({"enableRateLimit": True})
+
+
+def fetch_binance_json(endpoint: str) -> Any:
+    """Fetch JSON from Binance's public market-data API."""
+    request = Request(
+        f"{BINANCE_DATA_API}{endpoint}",
+        headers={"User-Agent": "grid-trading-scanner/0.1.0"},
+    )
+
+    with urlopen(request, timeout=30) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def scan_binance(
+    quote_currency: str,
+    minimum_quote_volume: float,
+    maximum_spread_percent: float,
+) -> list[dict[str, Any]]:
+    """Scan Binance Spot markets using its public market-data API."""
+    market_data = fetch_binance_json("/api/v3/exchangeInfo")
+    ticker_data = fetch_binance_json("/api/v3/ticker/24hr")
+    book_data = fetch_binance_json("/api/v3/ticker/bookTicker")
+
+    tickers = {
+        item["symbol"]: item
+        for item in ticker_data
+        if isinstance(item, dict) and "symbol" in item
+    }
+
+    books = {
+        item["symbol"]: item
+        for item in book_data
+        if isinstance(item, dict) and "symbol" in item
+    }
+
+    results: list[dict[str, Any]] = []
+
+    for market in market_data.get("symbols", []):
+        symbol = market.get("symbol")
+
+        if market.get("status") != "TRADING":
+            continue
+
+        if market.get("isSpotTradingAllowed") is not True:
+            continue
+
+        if market.get("quoteAsset") != quote_currency:
+            continue
+
+        ticker = tickers.get(symbol)
+        book = books.get(symbol)
+
+        if not ticker or not book:
+            continue
+
+        try:
+            quote_volume = float(ticker["quoteVolume"])
+            last = float(ticker["lastPrice"])
+            bid = float(book["bidPrice"])
+            ask = float(book["askPrice"])
+        except (KeyError, TypeError, ValueError):
+            continue
+
+        if quote_volume < minimum_quote_volume:
+            continue
+
+        if bid <= 0 or ask <= 0 or ask < bid:
+            continue
+
+        midpoint = (bid + ask) / 2
+        spread_percent = ((ask - bid) / midpoint) * 100
+
+        if spread_percent > maximum_spread_percent:
+            continue
+
+        results.append(
+            {
+                "exchange": "binance",
+                "symbol": f"{market['baseAsset']}/{quote_currency}",
+                "last": last,
+                "quote_volume_usdt": quote_volume,
+                "bid": bid,
+                "ask": ask,
+                "spread_percent": spread_percent,
+            }
+        )
+
+    return sorted(
+        results,
+        key=lambda item: item["quote_volume_usdt"],
+        reverse=True,
+    )
 
 
 def is_eligible_spot_market(
@@ -69,6 +165,16 @@ def scan_exchange(
     maximum_spread_percent: float = 0.15,
 ) -> list[dict[str, Any]]:
     """Fetch public Spot tickers and return eligible markets by volume."""
+    if exchange_id not in SUPPORTED_EXCHANGES:
+        raise ValueError(f"Unsupported exchange: {exchange_id}")
+
+    if exchange_id == "binance":
+        return scan_binance(
+            quote_currency=quote_currency,
+            minimum_quote_volume=minimum_quote_volume,
+            maximum_spread_percent=maximum_spread_percent,
+        )
+
     exchange = create_exchange(exchange_id)
 
     try:
