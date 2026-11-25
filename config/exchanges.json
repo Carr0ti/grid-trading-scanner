@@ -1,0 +1,14 @@
+
+{
+  "exchanges": [
+    "binance",
+    "okx",
+    "bybit",
+    "bitget",
+    "mexc"
+  ],
+  "quote_currency": "USDT",
+  "minimum_24h_quote_volume_usdt": 5000000,
+  "maximum_spread_percent": 0.15,
+  "top_pairs_per_exchange": 10
+}
