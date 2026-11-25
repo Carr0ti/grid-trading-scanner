@@ -4,11 +4,11 @@ import csv
 from grid_scanner import backtest_cli
 
 
-def sample_result():
+def sample_result(symbol="BTC/USDT"):
     return {
         "exchange": "binance",
-        "symbol": "BTC/USDT",
-        "binance_symbol": "BTCUSDT",
+        "symbol": symbol,
+        "binance_symbol": symbol.replace("/", ""),
         "interval": "1h",
         "first_candle_time": 1700000000000,
         "last_candle_time": 1701800000000,
@@ -34,6 +34,20 @@ def sample_result():
         "total_fees": 1.25,
         "buy_and_hold_final_equity": 505.0,
         "buy_and_hold_roi_percent": 1.0,
+    }
+
+
+def sample_batch(symbols):
+    results = [sample_result(symbol) for symbol in symbols]
+
+    return {
+        "exchange": "binance",
+        "interval": "1h",
+        "requested_count": len(symbols),
+        "success_count": len(results),
+        "failure_count": 0,
+        "results": results,
+        "errors": [],
     }
 
 
@@ -100,7 +114,7 @@ def test_cli_uses_default_settings(monkeypatch):
 
     def fake_backtest(**settings):
         captured.update(settings)
-        return sample_result()
+        return sample_result("ETH/USDT")
 
     monkeypatch.setattr(
         backtest_cli,
@@ -209,3 +223,189 @@ def test_cli_does_not_create_csv_without_output_option(
     output = capsys.readouterr().out
 
     assert "CSV report saved to:" not in output
+
+
+def test_cli_runs_batch_for_multiple_pairs(monkeypatch, capsys):
+    captured = {}
+
+    def fake_batch(**settings):
+        captured.update(settings)
+        return sample_batch(["BTC/USDT", "ETH/USDT", "SOL/USDT"])
+
+    monkeypatch.setattr(
+        backtest_cli,
+        "run_binance_spot_grid_batch_backtest",
+        fake_batch,
+    )
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "grid-backtest",
+            "BTC/USDT",
+            "ETH/USDT",
+            "SOL/USDT",
+            "--interval",
+            "4h",
+            "--candles",
+            "300",
+            "--capital",
+            "1000",
+        ],
+    )
+
+    backtest_cli.main()
+
+    output = capsys.readouterr().out
+
+    assert captured == {
+        "symbols": ["BTC/USDT", "ETH/USDT", "SOL/USDT"],
+        "interval": "4h",
+        "candle_limit": 300,
+        "initial_capital": 1000.0,
+        "grid_spacing_percent": 0.5,
+        "levels_each_side": 10,
+        "fee_rate": 0.001,
+        "slippage_rate": 0.0005,
+    }
+
+    assert "BINANCE SPOT GRID BATCH BACKTEST" in output
+    assert "Requested pairs: 3" in output
+    assert "Successful: 3" in output
+    assert "BTC/USDT" in output
+    assert "ETH/USDT" in output
+    assert "SOL/USDT" in output
+
+
+def test_cli_saves_all_successful_batch_results_to_csv(
+    monkeypatch,
+    capsys,
+    tmp_path,
+):
+    output_path = tmp_path / "reports" / "batch-results.csv"
+
+    monkeypatch.setattr(
+        backtest_cli,
+        "run_binance_spot_grid_batch_backtest",
+        lambda **settings: sample_batch(
+            ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+        ),
+    )
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "grid-backtest",
+            "BTC/USDT",
+            "ETH/USDT",
+            "SOL/USDT",
+            "--output",
+            str(output_path),
+        ],
+    )
+
+    backtest_cli.main()
+
+    output = capsys.readouterr().out
+
+    assert output_path.exists()
+    assert "CSV report saved to:" in output
+
+    with output_path.open(
+        newline="",
+        encoding="utf-8",
+    ) as csv_file:
+        rows = list(csv.DictReader(csv_file))
+
+    assert len(rows) == 3
+    assert [row["symbol"] for row in rows] == [
+        "BTC/USDT",
+        "ETH/USDT",
+        "SOL/USDT",
+    ]
+
+
+def test_cli_displays_failed_batch_pairs(monkeypatch, capsys):
+    batch = sample_batch(["BTC/USDT"])
+    batch["requested_count"] = 2
+    batch["failure_count"] = 1
+    batch["errors"] = [
+        {
+            "symbol": "BAD/USDT",
+            "error": "Pair unavailable",
+        }
+    ]
+
+    monkeypatch.setattr(
+        backtest_cli,
+        "run_binance_spot_grid_batch_backtest",
+        lambda **settings: batch,
+    )
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "grid-backtest",
+            "BTC/USDT",
+            "BAD/USDT",
+        ],
+    )
+
+    backtest_cli.main()
+
+    output = capsys.readouterr().out
+
+    assert "Requested pairs: 2" in output
+    assert "Successful: 1" in output
+    assert "Failed: 1" in output
+    assert "BAD/USDT: Pair unavailable" in output
+
+
+def test_cli_saves_empty_batch_csv_when_all_pairs_fail(
+    monkeypatch,
+    capsys,
+    tmp_path,
+):
+    output_path = tmp_path / "all-failed.csv"
+
+    batch = {
+        "exchange": "binance",
+        "interval": "1h",
+        "requested_count": 2,
+        "success_count": 0,
+        "failure_count": 2,
+        "results": [],
+        "errors": [
+            {"symbol": "BAD1/USDT", "error": "Unavailable"},
+            {"symbol": "BAD2/USDT", "error": "Unavailable"},
+        ],
+    }
+
+    monkeypatch.setattr(
+        backtest_cli,
+        "run_binance_spot_grid_batch_backtest",
+        lambda **settings: batch,
+    )
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "grid-backtest",
+            "BAD1/USDT",
+            "BAD2/USDT",
+            "--output",
+            str(output_path),
+        ],
+    )
+
+    backtest_cli.main()
+
+    assert output_path.exists()
+
+    with output_path.open(
+        newline="",
+        encoding="utf-8",
+    ) as csv_file:
+        rows = list(csv.DictReader(csv_file))
+
+    assert rows == []
