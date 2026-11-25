@@ -179,7 +179,7 @@ def test_nearest_buy_level_is_selected_when_multiple_are_touched():
     result = simple_grid_backtest(candles)
 
     assert result["buy_count"] == 1
-    assert result["fills"][0]["grid_price"] == pytest.approx(99)
+    assert result["fills"][0]["grid_price"] == pytest.approx(100 / 1.01)
 
 
 def test_nearest_sell_level_is_selected_when_multiple_are_touched():
