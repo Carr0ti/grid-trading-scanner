@@ -35,15 +35,95 @@ def fetch_binance_json(endpoint: str) -> Any:
         return json.loads(response.read().decode("utf-8"))
 
 
+def _quote_to_usdt_rates(
+    markets: list[dict[str, Any]],
+    tickers: dict[str, dict[str, Any]],
+) -> dict[str, float]:
+    """Estimate quote-asset conversion rates into USDT."""
+    rates = {"USDT": 1.0}
+
+    for market in markets:
+        if market.get("status") != "TRADING":
+            continue
+
+        if market.get("isSpotTradingAllowed") is not True:
+            continue
+
+        base = market.get("baseAsset")
+        quote = market.get("quoteAsset")
+        symbol = market.get("symbol")
+
+        if not base or not quote or not symbol:
+            continue
+
+        ticker = tickers.get(symbol)
+
+        if not ticker:
+            continue
+
+        try:
+            price = float(ticker["lastPrice"])
+        except (KeyError, TypeError, ValueError):
+            continue
+
+        if price <= 0:
+            continue
+
+        if quote == "USDT":
+            rates[base] = price
+
+        elif base == "USDT":
+            rates[quote] = 1.0 / price
+
+    return rates
+
+
+def _market_filters(
+    market: dict[str, Any],
+) -> dict[str, Any]:
+    """Extract Binance order filters needed for future simulations."""
+    result: dict[str, Any] = {}
+
+    for item in market.get("filters", []):
+        filter_type = item.get("filterType")
+
+        if filter_type == "PRICE_FILTER":
+            result["tick_size"] = item.get("tickSize")
+
+        elif filter_type == "LOT_SIZE":
+            result["step_size"] = item.get("stepSize")
+            result["min_quantity"] = item.get("minQty")
+
+        elif filter_type in ("MIN_NOTIONAL", "NOTIONAL"):
+            result["min_notional"] = (
+                item.get("minNotional")
+                or item.get("notional")
+            )
+
+    return result
+
+
 def scan_binance(
-    quote_currency: str,
-    minimum_quote_volume: float,
-    maximum_spread_percent: float,
+    quote_currency: str | None = None,
+    minimum_quote_volume: float = 5_000_000,
+    maximum_spread_percent: float = 0.15,
 ) -> list[dict[str, Any]]:
-    """Scan Binance Spot markets using its public market-data API."""
+    """Scan all eligible Binance Spot markets.
+
+    If quote_currency is None, all quote currencies are included.
+    Volume is normalized approximately into USDT for comparison.
+    """
+    if minimum_quote_volume < 0:
+        raise ValueError("Minimum quote volume cannot be negative")
+
+    if maximum_spread_percent < 0:
+        raise ValueError("Maximum spread cannot be negative")
+
     market_data = fetch_binance_json("/api/v3/exchangeInfo")
     ticker_data = fetch_binance_json("/api/v3/ticker/24hr")
     book_data = fetch_binance_json("/api/v3/ticker/bookTicker")
+
+    markets = market_data.get("symbols", [])
 
     tickers = {
         item["symbol"]: item
@@ -57,10 +137,17 @@ def scan_binance(
         if isinstance(item, dict) and "symbol" in item
     }
 
+    conversion_rates = _quote_to_usdt_rates(markets, tickers)
+
     results: list[dict[str, Any]] = []
 
-    for market in market_data.get("symbols", []):
+    for market in markets:
         symbol = market.get("symbol")
+        base_asset = market.get("baseAsset")
+        market_quote = market.get("quoteAsset")
+
+        if not symbol or not base_asset or not market_quote:
+            continue
 
         if market.get("status") != "TRADING":
             continue
@@ -68,7 +155,14 @@ def scan_binance(
         if market.get("isSpotTradingAllowed") is not True:
             continue
 
-        if market.get("quoteAsset") != quote_currency:
+        if quote_currency and market_quote != quote_currency:
+            continue
+
+        conversion_rate = conversion_rates.get(market_quote)
+
+        # Skip markets whose quote asset cannot be normalized
+        # reliably into USDT using a direct conversion market.
+        if conversion_rate is None:
             continue
 
         ticker = tickers.get(symbol)
@@ -85,10 +179,15 @@ def scan_binance(
         except (KeyError, TypeError, ValueError):
             continue
 
-        if quote_volume < minimum_quote_volume:
+        if quote_volume < 0 or last <= 0:
             continue
 
         if bid <= 0 or ask <= 0 or ask < bid:
+            continue
+
+        quote_volume_usdt = quote_volume * conversion_rate
+
+        if quote_volume_usdt < minimum_quote_volume:
             continue
 
         midpoint = (bid + ask) / 2
@@ -100,12 +199,17 @@ def scan_binance(
         results.append(
             {
                 "exchange": "binance",
-                "symbol": f"{market['baseAsset']}/{quote_currency}",
+                "symbol": f"{base_asset}/{market_quote}",
+                "base_asset": base_asset,
+                "quote_asset": market_quote,
                 "last": last,
-                "quote_volume_usdt": quote_volume,
+                "quote_volume": quote_volume,
+                "quote_volume_usdt": quote_volume_usdt,
+                "quote_to_usdt_rate": conversion_rate,
                 "bid": bid,
                 "ask": ask,
                 "spread_percent": spread_percent,
+                **_market_filters(market),
             }
         )
 
@@ -160,7 +264,7 @@ def is_eligible_spot_market(
 
 def scan_exchange(
     exchange_id: str,
-    quote_currency: str = "USDT",
+    quote_currency: str | None = None,
     minimum_quote_volume: float = 5_000_000,
     maximum_spread_percent: float = 0.15,
 ) -> list[dict[str, Any]]:
@@ -189,10 +293,13 @@ def scan_exchange(
             if not ticker:
                 continue
 
+            if quote_currency and market.get("quote") != quote_currency:
+                continue
+
             if not is_eligible_spot_market(
                 market,
                 ticker,
-                quote_currency=quote_currency,
+                quote_currency=market.get("quote", ""),
                 minimum_quote_volume=minimum_quote_volume,
                 maximum_spread_percent=maximum_spread_percent,
             ):
@@ -206,7 +313,10 @@ def scan_exchange(
                 {
                     "exchange": exchange_id,
                     "symbol": symbol,
+                    "base_asset": market.get("base"),
+                    "quote_asset": market.get("quote"),
                     "last": ticker.get("last"),
+                    "quote_volume": ticker.get("quoteVolume"),
                     "quote_volume_usdt": ticker.get("quoteVolume"),
                     "bid": bid,
                     "ask": ask,
