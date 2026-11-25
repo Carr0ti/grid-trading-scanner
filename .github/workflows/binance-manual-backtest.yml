@@ -1,0 +1,106 @@
+
+name: Binance Manual Spot Grid Backtest
+
+on:
+  workflow_dispatch:
+    inputs:
+      symbol:
+        description: "Binance Spot pair, e.g. BTC/USDT"
+        required: true
+        type: string
+      lower:
+        description: "Grid lower price"
+        required: true
+        type: string
+      upper:
+        description: "Grid upper price"
+        required: true
+        type: string
+      grids:
+        description: "Number of grid intervals"
+        required: true
+        default: "10"
+        type: string
+      mode:
+        description: "Grid calculation mode"
+        required: true
+        default: arithmetic
+        type: choice
+        options:
+          - arithmetic
+          - geometric
+      interval:
+        description: "Historical candle timeframe"
+        required: true
+        default: 1h
+        type: choice
+        options:
+          - 1h
+          - 4h
+          - 1d
+      candles:
+        description: "Number of historical candles (2-1000)"
+        required: true
+        default: "500"
+        type: string
+      capital:
+        description: "Starting portfolio value"
+        required: true
+        default: "500"
+        type: string
+      fee:
+        description: "Trading fee percentage per fill"
+        required: true
+        default: "0.1"
+        type: string
+      slippage:
+        description: "Slippage percentage per fill"
+        required: true
+        default: "0.05"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  backtest:
+    name: Run Manual Grid Backtest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .
+
+      - name: Run Binance Manual Grid Backtest
+        run: |
+          grid-binance-backtest \
+            "${{ inputs.symbol }}" \
+            --lower "${{ inputs.lower }}" \
+            --upper "${{ inputs.upper }}" \
+            --grids "${{ inputs.grids }}" \
+            --mode "${{ inputs.mode }}" \
+            --interval "${{ inputs.interval }}" \
+            --candles "${{ inputs.candles }}" \
+            --capital "${{ inputs.capital }}" \
+            --fee "${{ inputs.fee }}" \
+            --slippage "${{ inputs.slippage }}" \
+            --output reports/binance-manual-backtest.csv
+
+      - name: Upload backtest report
+        uses: actions/upload-artifact@v4
+        with:
+          name: binance-manual-grid-backtest
+          path: reports/binance-manual-backtest.csv
+          if-no-files-found: error
+          retention-days: 30
