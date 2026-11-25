@@ -1,4 +1,6 @@
 
+import math
+
 import pytest
 
 from grid_scanner.backtest import backtest_spot_grid
@@ -62,9 +64,35 @@ def test_backtest_rejects_invalid_candle_prices():
         simple_grid_backtest(candles)
 
 
+@pytest.mark.parametrize("bad_price", [0, -1, math.inf, -math.inf, math.nan])
+def test_backtest_rejects_non_finite_or_non_positive_prices(bad_price):
+    candles = [
+        make_candle(100),
+        {
+            "open": 100,
+            "high": 101,
+            "low": 99,
+            "close": bad_price,
+        },
+    ]
+
+    with pytest.raises(ValueError):
+        simple_grid_backtest(candles)
+
+
 def test_backtest_rejects_out_of_order_timestamps():
     candles = [
         make_candle(100, timestamp=200),
+        make_candle(101, timestamp=100),
+    ]
+
+    with pytest.raises(ValueError):
+        simple_grid_backtest(candles)
+
+
+def test_backtest_rejects_duplicate_timestamps():
+    candles = [
+        make_candle(100, timestamp=100),
         make_candle(101, timestamp=100),
     ]
 
@@ -105,6 +133,31 @@ def test_buy_then_sell_completes_a_grid_cycle():
     assert result["final_base_asset"] == pytest.approx(2.5)
 
 
+def test_buy_order_fills_when_price_touches_grid_level():
+    candles = [
+        make_candle(100),
+        make_candle(99, low=99, high=100),
+    ]
+
+    result = simple_grid_backtest(candles)
+
+    assert result["buy_count"] == 1
+    assert result["fills"][0]["grid_price"] == pytest.approx(99)
+
+
+def test_sell_order_can_fill_without_a_previous_buy():
+    candles = [
+        make_candle(100),
+        make_candle(101, low=100, high=101),
+    ]
+
+    result = simple_grid_backtest(candles)
+
+    assert result["sell_count"] == 1
+    assert result["buy_count"] == 0
+    assert result["fills"][0]["grid_price"] == pytest.approx(101)
+
+
 def test_only_one_order_can_fill_per_candle():
     candles = [
         make_candle(100),
@@ -115,6 +168,30 @@ def test_only_one_order_can_fill_per_candle():
 
     assert result["buy_count"] == 1
     assert result["trade_count"] == 1
+
+
+def test_nearest_buy_level_is_selected_when_multiple_are_touched():
+    candles = [
+        make_candle(100),
+        make_candle(97, low=97, high=100),
+    ]
+
+    result = simple_grid_backtest(candles)
+
+    assert result["buy_count"] == 1
+    assert result["fills"][0]["grid_price"] == pytest.approx(99)
+
+
+def test_nearest_sell_level_is_selected_when_multiple_are_touched():
+    candles = [
+        make_candle(100),
+        make_candle(103, low=100, high=103),
+    ]
+
+    result = simple_grid_backtest(candles)
+
+    assert result["sell_count"] == 1
+    assert result["fills"][0]["grid_price"] == pytest.approx(101)
 
 
 def test_ambiguous_candle_skips_all_fills():
@@ -170,6 +247,18 @@ def test_backtest_returns_benchmark_and_risk_metrics():
     assert len(result["equity_curve"]) == len(candles)
 
 
+def test_drawdown_is_calculated_from_equity_peak():
+    candles = [
+        make_candle(100),
+        make_candle(90, low=90, high=100),
+    ]
+
+    result = simple_grid_backtest(candles)
+
+    assert result["maximum_drawdown_percent"] > 0
+    assert result["maximum_drawdown_percent"] < 100
+
+
 def test_buy_and_hold_benchmark_uses_same_initial_reference_price():
     candles = [
         make_candle(100),
@@ -206,6 +295,7 @@ def test_flat_market_gives_both_strategies_zero_return():
         {"grid_spacing_percent": -1},
         {"levels_each_side": 0},
         {"levels_each_side": 1001},
+        {"levels_each_side": True},
         {"fee_rate": -0.1},
         {"fee_rate": 1},
         {"slippage_rate": -0.1},
