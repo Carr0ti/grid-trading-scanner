@@ -152,19 +152,7 @@ def run_binance_grid_optimizer(
     fee_rate: float = 0.001,
     slippage_rate: float = 0.0005,
 ) -> dict[str, Any]:
-    """Test multiple Binance Spot Grid configurations for USDT pairs.
-
-    Each range is centered on the first completed candle's closing price.
-    Range width is the total percentage width around that price.
-
-    Example:
-        Starting price = 100
-        Range width = 20%
-        Lower price = 90
-        Upper price = 110
-
-    Candles are fetched once per pair and reused across all configurations.
-    """
+    """Test multiple Binance Spot Grid configurations for USDT pairs."""
 
     pair_list, widths, counts, mode_list = _validate_options(
         symbols=symbols,
@@ -229,6 +217,8 @@ def run_binance_grid_optimizer(
 
         for configuration in configurations:
             width = configuration["range_width_percent"]
+            grid_count = configuration["grid_count"]
+            mode = configuration["mode"]
 
             lower_price = starting_price * (1 - width / 200)
             upper_price = starting_price * (1 + width / 200)
@@ -239,18 +229,24 @@ def run_binance_grid_optimizer(
                     initial_capital=initial_capital,
                     lower_price=lower_price,
                     upper_price=upper_price,
-                    grid_count=configuration["grid_count"],
-                    mode=configuration["mode"],
+                    grid_count=grid_count,
+                    mode=mode,
                     fee_rate=fee_rate,
                     slippage_rate=slippage_rate,
                 )
 
+                # Always attach configuration metadata here,
+                # independently of the backtest engine's return fields.
                 result.update({
                     "exchange": "binance",
                     "symbol": symbol,
                     "binance_symbol": binance_symbol,
                     "interval": interval,
+                    "mode": mode,
+                    "grid_count": grid_count,
                     "range_width_percent": width,
+                    "lower_price": lower_price,
+                    "upper_price": upper_price,
                     "first_candle_time": completed_candles[0]["open_time"],
                     "last_candle_time": completed_candles[-1]["open_time"],
                     "completed_candle_count": len(completed_candles),
@@ -269,7 +265,6 @@ def run_binance_grid_optimizer(
                     "error": str(error),
                 })
 
-    # Rank by historical ROI, highest first.
     results.sort(
         key=lambda item: item["roi_percent"],
         reverse=True,
